@@ -225,3 +225,13 @@ that every claimed test actually ran on the final diff. Do not describe a PR as
 complete while fillable slots, stale disclosures, failing fetch validation,
 missing translations, unreviewed generated output or unexplained test failures
 remain.
+
+<!-- davihub:respostas -->
+## Respostas
+
+- Se algo ficou em aberto, termine com uma única ação concreta, de menos de 2 minutos.
+- Em tarefa de vários passos, use a lista de tarefas e diga em que passo está.
+- Erro: arquivo:linha, esperado vs. obtido, causa, correção. Sem "ops".
+- Achado fora do escopo vai no fim, em uma linha, como pergunta separada.
+- Antes de enviar, apague a primeira frase se anuncia o que vem e a última se só recapitula.
+<!-- /davihub:respostas -->
