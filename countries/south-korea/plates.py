@@ -143,6 +143,33 @@ def net_migration_rate(ctx) -> tuple[list[int], list[float]]:
     return ctx.per_1000(net, pop)
 
 
+def migration_flow_rates(ctx) -> tuple[tuple[list[int], list[float]],
+                                       tuple[list[int], list[float]]]:
+    """Gross >90-day immigration and emigration per 1,000 residents."""
+    flows = "social/migration.csv"
+    pop = {y: v * 1e6 for y, v in
+           _series(ctx, "social/population.csv", "pop_mn").items()}
+    return (ctx.per_1000(_series(ctx, flows, "arrivals"), pop),
+            ctx.per_1000(_series(ctx, flows, "departures"), pop))
+
+
+def migration_citizenship_net_rates(ctx) -> tuple[dict[int, float],
+                                                    dict[int, float]]:
+    """Each citizenship group's contribution to total net migration.
+
+    Both are counts on the same >90-day definition as the canonical total;
+    dividing by the total resident population makes the two lines additive.
+    """
+    rel = "migration/flows_by_citizenship.csv"
+    pop = {y: v * 1e6 for y, v in
+           _series(ctx, "social/population.csv", "pop_mn").items()}
+    out = []
+    for column in ("korean_net", "foreign_net"):
+        years, values = ctx.per_1000(_series(ctx, rel, column), pop)
+        out.append(dict(zip(years, values)))
+    return out[0], out[1]
+
+
 # ---------------------------------------------------------------- drawing
 def _note(ctx, ax, x, y, text, color=None, ha="left", va="center",
           axes=False, size=8.2, weight="normal", style="normal"):
@@ -225,13 +252,14 @@ def plate_economy(ctx, ig):
             ls=(0, (5, 3)), zorder=2)
     ctx.line(ax, *_xy(cpi), p.RED, label="CPI, % change on a year earlier")
     _finish(ig, ax)
-    _note(ctx, ax, 2016.0, 2.5, "2% target (since 2016)", color=p.TEAL,
-          va="bottom")
+    _note(ctx, ax, 0.02, 0.92, "2% target (since 2016)", color=p.TEAL,
+          axes=True, va="top")
     y, v = _peak(cpi)
-    _note(ctx, ax, y + 0.4, v + 1.2, f"{y}: {v:.1f}%", color=p.RED,
-          weight="bold")
+    _note(ctx, ax, 0.02, 0.82, f"{y}: {v:.1f}%", color=p.RED,
+          axes=True, va="top", weight="bold")
     y, v = _low(cpi)
-    _note(ctx, ax, y, -1.2, f"{y}: {v:.1f}%, the floor so far", ha="center")
+    _note(ctx, ax, 0.02, 0.72, f"{y}: {v:.1f}%, the floor so far",
+          axes=True, va="top")
 
     ax = ig.slot("economy.unemployment", "Unemployment rate")
     ctx.line(ax, *_xy(unemp), p.PURPLE, label="Labour force survey, 15+")
@@ -297,8 +325,8 @@ def plate_fiscal(ctx, ig):
     _finish(ig, ax)
     _legend(ax, loc="upper left")
     y, v = _last(imf["gross_debt_pct_gdp"])
-    _note(ctx, ax, y, v + 9, f"{y}: {v:.1f}%", color=p.BLUE_D, ha="right",
-          weight="bold")
+    _note(ctx, ax, 0.98, 0.82, f"{y}: {v:.1f}%", color=p.BLUE_D,
+          ha="right", axes=True, weight="bold")
 
     ax = ig.slot("fiscal.interest", "Interest paid")
     ctx.line(ax, *_xy(interest), p.PURPLE,
@@ -452,7 +480,7 @@ def plate_trade(ctx, ig):
     china = shares["China"]
     y, v = _peak(china)
     y2, v2 = _last(china)
-    _note(ctx, ax, 0.98, 0.06, f"China: {v:.1f}% at the {y} peak, "
+    _note(ctx, ax, 0.98, 0.70, f"China: {v:.1f}% at the {y} peak, "
           f"{v2:.1f}% in {y2}", ha="right", axes=True, color=p.RED)
 
     ax = ig.slot("trade.lens", "Lens: what Korea exports, US$ bn")
@@ -503,7 +531,7 @@ def plate_markets(ctx, ig):
     _finish(ig, ax, slot_one=True, band_y=0.93)
     _legend(ax, loc="center right")
     y, v = _low(base)
-    _note(ctx, ax, y, v - 0.9, f"{y}: {v:.2f}%", ha="center", va="top",
+    _note(ctx, ax, 0.02, 0.80, f"{y}: {v:.2f}%", axes=True, va="top",
           color=p.BLUE_D, weight="bold")
 
     ax = ig.slot("markets.bond_10y", "10-year government bond yield")
@@ -521,7 +549,7 @@ def plate_markets(ctx, ig):
     ig.add_event(ax, 2024.92, "martial law", dy=0.97)
     _legend(ax, loc="lower left")
     y = ctx.LAST_FULL_YEAR
-    _note(ctx, ax, 0.98, 0.84, f"{y}: ₩{avg[y]:,.0f} per US$, against "
+    _note(ctx, ax, 0.98, 0.20, f"{y}: ₩{avg[y]:,.0f} per US$, against "
           f"₩{avg[min(avg)]:,.0f} in {min(avg)}", ha="right", axes=True)
 
     ax = ig.slot("markets.equities", "Main equity index in US$")
@@ -802,7 +830,7 @@ def plate_demography(ctx, ig):
     _finish(ig, ax)
     _legend(ax, loc="upper right")
     y, v = _last(natural)
-    _note(ctx, ax, 0.02, 0.22, f"bars: births minus deaths, {v:.1f} per "
+    _note(ctx, ax, 0.02, 0.72, f"bars: births minus deaths, {v:.1f} per "
           f"1,000 in {y}", axes=True, size=7.8)
     m = dict(zip(yrs, mig))
     y = min(m, key=lambda k: m[k])
@@ -933,6 +961,70 @@ def plate_mortality(ctx, ig):
         a.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
 
 
+# --------------------------------------------------------------- migration
+def plate_migration(ctx, ig):
+    p = ctx.p
+    (iy, immigration), (ey, emigration) = migration_flow_rates(ctx)
+    ny, net = net_migration_rate(ctx)
+    stock = _series(ctx, "migration/foreign_residents_census.csv",
+                    "foreign_citizen_share_pct")
+    stock_n = _series(ctx, "migration/foreign_residents_census.csv",
+                      "foreign_citizens_thousands")
+    korean, foreign = migration_citizenship_net_rates(ctx)
+
+    ax = ig.slot("migration.flows", "Immigration and emigration")
+    ctx.line(ax, iy, immigration, p.BLUE, label="Immigration")
+    ctx.line(ax, ey, emigration, p.RED, label="Emigration")
+    _finish(ig, ax, slot_one=True)
+    _legend(ax, loc="upper left", ncol=2)
+    _note(ctx, ax, 0.98, 0.83,
+          "more than 90 days; Koreans and foreigners together",
+          ha="right", axes=True, size=7.8)
+    y = max(set(iy) & set(ey))
+    _note(ctx, ax, 0.98, 0.74,
+          f"{y}: {immigration[iy.index(y)]:.1f} in, "
+          f"{emigration[ey.index(y)]:.1f} out per 1,000",
+          ha="right", axes=True, weight="bold")
+
+    ax = ig.slot("migration.net", "Net migration")
+    ctx.bars(ax, ny, net, _signed(ctx, p.BLUE, p.RED))
+    _finish(ig, ax)
+    net_map = dict(zip(ny, net))
+    _note(ctx, ax, 2021, net_map[2021] - 1.0,
+          f"2021: borders closed, {net_map[2021]:.1f}", ha="center",
+          va="top", color=p.RED, weight="bold")
+    y = max(net_map)
+    _note(ctx, ax, 0.98, 0.18, f"{y}: +{net_map[y]:.1f} per 1,000",
+          ha="right", axes=True, color=p.BLUE_D, weight="bold")
+
+    ax = ig.slot("migration.foreign_born", "Foreign-citizen share")
+    ctx.line(ax, *_xy(stock), p.TEAL,
+             label="Resident foreigners at 1 November")
+    _finish(ig, ax)
+    _legend(ax, loc="upper left")
+    _note(ctx, ax, 0.02, 0.82,
+          "register census; citizenship, not birthplace",
+          axes=True, size=7.8)
+    y, v = _last(stock)
+    _note(ctx, ax, 0.98, 0.18,
+          f"{y}: {stock_n[y] / 1000:.3f} million, {v:.1f}%",
+          ha="right", axes=True, color=p.TEAL, weight="bold")
+
+    ax = ig.slot("migration.lens", "Lens: net migration by citizenship")
+    ctx.line(ax, *_xy(korean), p.BLUE, label="Korean citizens")
+    ctx.line(ax, *_xy(foreign), p.RED, label="Foreign citizens")
+    _finish(ig, ax)
+    ax.axhline(0, color=p.spine, lw=0.8, zorder=1)
+    ax.set_ylim(-3.5, 5.5)
+    ax.set_ylabel("per 1,000 people", fontsize=8.6, color=p.MUTED)
+    _legend(ax, loc="upper left", ncol=2)
+    _note(ctx, ax, 0.98, 0.80,
+          "the two lines sum to total net migration",
+          ha="right", axes=True, size=7.8)
+    for a in ig.axes_flat:
+        a.yaxis.set_major_formatter(mticker.FuncFormatter(_tick))
+
+
 PLATES = (
     dict(slug="01_economy", topic="economy", builder=plate_economy,
          title="The Korean Economy, 2006–2026",
@@ -1045,4 +1137,18 @@ PLATES = (
              "as a share above the 2015–2019 average, COVID-19 deaths per "
              "100,000, and the death rates from cancer, heart disease, "
              "pneumonia and stroke."),
+    dict(slug="12_migration", topic="migration", builder=plate_migration,
+         title="Migration — Who Arrives, Who Leaves, Who Is Here, 2006–2026",
+         subtitle="International moves lasting more than 90 days, and the "
+                  "resident foreign-citizen population counted by the census.",
+         source="Sources: Statistics Korea — International Migration "
+                "Statistics and the register-based Population and Housing "
+                "Census",
+         alt="Four panels on migration in South Korea. Immigration and "
+             "emigration count Korean and foreign citizens moving for more "
+             "than 90 days, shown per 1,000 residents; net migration is "
+             "negative only in 2021. The register census counts resident "
+             "foreign citizens, 3.9% of the population in 2024. The lens "
+             "splits net migration into Korean- and foreign-citizen "
+             "contributions on the same definition."),
 )

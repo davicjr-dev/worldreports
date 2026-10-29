@@ -20,6 +20,9 @@ name:
   zh-Hant: "義大利"
   vi: "Ý"
   de: "Italien"
+  uk: "Італія"
+  pl: "Włochy"
+  ru: "Италия"
 
 locales:
   - {code: it, html_lang: it-IT, og_locale: it_IT, endonym: Italiano}

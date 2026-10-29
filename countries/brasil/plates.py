@@ -7,8 +7,8 @@ place, in the same unit and on the same scale as every other country's
 the spine asks for one — IMF general government, World Bank GDP per
 person and trade, BIS household credit — and the Brazilian series the
 country actually argues about rides beside them as a labelled second
-line: the Tesouro's central-government primary result, the BCB's DBGG
-and DLSP debt, the NFSP interest bill. The lens slot is Brazil's own
+line: the Tesouro's central-government primary result, the BCB's gross
+DBGG debt, and the NFSP interest bill. The lens slot is Brazil's own
 story.
 
 Counts are rates (PLATE_SPINE.md rule 5). Every per-100k and per-1,000
@@ -213,14 +213,12 @@ def fig_fiscal(ctx, ig) -> None:
                    "Overall balance, general government (IMF)")])
     recessions(ig, ax)
 
-    ax = ig.slot("fiscal.debt", "Gross debt — three Brazilian definitions")
+    ax = ig.slot("fiscal.debt", "Gross debt — two Brazilian definitions")
     imf = col(gg, "gross_debt_pct_gdp")
-    dbgg, dlsp = col(debt, "gross"), col(debt, "net")
+    dbgg = col(debt, "gross")
     ctx.line(ax, *xy(imf, 2006), ctx.p.RED, label="Gross, general government (IMF)")
     ctx.line(ax, *xy(dbgg), ctx.p.PURPLE, lw=1.8, ms=3,
              label="Gross, DBGG (BCB concept)")
-    ctx.line(ax, *xy(dlsp), ctx.p.TEAL, lw=1.8, ms=3, ls="--",
-             label="Net, public sector — DLSP (BCB)")
     y = max(imf)
     note(ax, f"{y}: IMF {imf[y]:.1f}% vs DBGG {dbgg[y]:.1f}% — the IMF counts "
          f"the Treasury bonds the BCB holds", y=0.06, va="bottom")
@@ -321,7 +319,7 @@ def fig_spending(ctx, ig) -> None:
     ctx.line(ax, *xy(rtn), ctx.p.YELLOW, lw=1.8, ms=3, ls="--",
              label="Federal investment paid, GND 4+5 (Tesouro RTN)")
     note(ax, f"the OECD series stops in {max(pub)} · federal: "
-         f"{rtn[max(rtn)]:.2f}% of GDP in {max(rtn)}", y=0.06, va="bottom")
+         f"{rtn[max(rtn)]:.2f}% of GDP in {max(rtn)}", y=0.97)
     legend(ax, loc="upper right")
     recessions(ig, ax)
     finish(ig)
@@ -400,7 +398,9 @@ def fig_trade(ctx, ig) -> None:
                [usbi.get((y, p), 0) for y in pick], width=width,
                label=PRODUCT_LABEL[p], color=pal[p], edgecolor="white",
                linewidth=0.4, zorder=3)
-    legend(ax, loc="upper left", ncol=4, fontsize=7.2)
+    # opaque, so the 70 gridline does not run through the legend text
+    legend(ax, loc="upper left", ncol=4, fontsize=7.2, frameon=True,
+           facecolor="white", framealpha=1, edgecolor="none")
     resid = usbi.get((pick[-1], "others"), 0)
     note(ax, f"excludes the 'others' residual (US${resid:,.0f}bn in "
          f"{pick[-1]})", x=0.5, y=-0.13, ha="center", size=7.6)
@@ -430,9 +430,9 @@ def fig_markets(ctx, ig) -> None:
              label="IPCA, Dec/Dec (IBGE)")
     note(ax, f"{full}: Selic {selic[full]:.2f}%,\nIPCA {ipca[full]:.2f}%",
          x=0.56, y=0.75)
-    legend(ax, loc="lower center", bbox_to_anchor=(0.5, 0.06), ncol=2)
+    legend(ax, loc="upper center", bbox_to_anchor=(0.5, 0.90), ncol=2)
     ig.mark_partial(ax, ctx.YEARS[-1], f"{ctx.YEARS[-1]}: Oct")
-    recessions(ig, ax, first=True, y=0.03)
+    recessions(ig, ax, first=True, y=0.60)
 
     ax = ig.slot("markets.bond_10y", "10-year government bond yield")
     b = col(bond, "yield_10y")
@@ -504,7 +504,7 @@ def fig_credit(ctx, ig) -> None:
              label="Household credit, average rate, Dec (BCB)")
     ctx.line(ax, *xy(selic), NAVY_C, lw=1.8, ms=3, label="Selic target, year-end")
     note(ax, f"BCB rebuilt these statistics on SCR microdata in {min(pf)}"
-         f"\n{full}: {pf[full]:.1f}% a year", y=0.06, va="bottom")
+         f"\n{full}: {pf[full]:.1f}% a year", y=0.97)
     legend(ax, loc="center left", bbox_to_anchor=(0.0, 0.52))
     ig.mark_partial(ax, ctx.YEARS[-1], f"{ctx.YEARS[-1]}: Aug")
     recessions(ig, ax)
@@ -584,8 +584,8 @@ def fig_people(ctx, ig) -> None:
     note(ax, "Brazil sets no official poverty line; IBGE reports the World "
          f"Bank's · {last}: {p830[last]:.1f}% and {p300[last]:.1f}%",
          y=0.97)
-    ig.add_event(ax, *MARKS["emergency_aid"], dy=0.84)
-    legend(ax, loc="lower right", bbox_to_anchor=(1.0, 0.18))
+    ig.add_event(ax, *MARKS["emergency_aid"], dy=0.64)
+    legend(ax, loc="upper right", bbox_to_anchor=(1.0, 0.88))
     recessions(ig, ax)
 
     ax = ig.slot("people.minimum_wage", "Minimum wage")
@@ -867,6 +867,53 @@ def fig_epidemics(ctx, ig) -> None:
     finish(ig)
 
 
+# ----------------------------------------------------------- migration
+def fig_migration(ctx, ig) -> None:
+    ax = ig.slot("migration.flows",
+                 "Immigration and emigration — incompatible components")
+    ctx.pending(ax)
+    recessions(ig, ax, first=True)
+    note(ax, "IBGE estimates imply impossible negative emigration in 2020;\n"
+             "the gross pair stays pending until the method is reconciled.",
+         x=0.5, y=0.34, ha="center")
+    ax = ig.slot("migration.net", "Net migration — UN WPP estimate")
+    demo = ctx.table("social/demography.csv")
+    rate = dict(zip(*ctx.per_1000(col(demo, "net_migration"),
+                                  col(demo, "population"))))
+    ctx.line(ax, *xy(rate), ctx.p.BLUE, label="UN WPP, modelled")
+    recessions(ig, ax)
+    legend(ax, loc="upper left")
+    ax = ig.slot("migration.foreign_born",
+                 "Foreign-born and foreign-citizen share")
+    stock = ctx.table("migration/stock_census.csv")
+    ctx.line(ax, *xy(col(stock, "foreign_born_pct")), ctx.p.BLUE,
+             label="born abroad")
+    ctx.line(ax, *xy(col(stock, "foreign_citizens_pct")), ctx.p.YELLOW,
+             label="foreign citizens")
+    for value, colour in ((col(stock, "foreign_born_pct")[2022], ctx.p.BLUE),
+                          (col(stock, "foreign_citizens_pct")[2022], ctx.p.YELLOW)):
+        ax.text(2022, value, f"{value:.2f}%", ha="center", va="bottom",
+                fontsize=8.4, fontweight="bold", color=colour)
+    recessions(ig, ax)
+    legend(ax, loc="upper left")
+    note(ax, "Censo 2022, same-census denominator. Birthplace and\n"
+             "citizenship are different stocks.", x=0.985, y=0.08,
+         ha="right", va="bottom")
+    ax = ig.slot("migration.lens", "Lens: residents born in Latin America")
+    origins = col(ctx.table("migration/origins_census.csv"),
+                  "latin_america_born")
+    ys, vals = xy(origins)
+    vals = [v / 1000 for v in vals]
+    ax.bar([str(y) for y in ys], vals,
+           color=[ctx.p.YELLOW, ctx.p.GREEN_D], width=0.58)
+    ax.set_ylabel("thousand residents", fontsize=8.6, color=ctx.p.MUTED)
+    for i, value in enumerate(vals):
+        ax.text(i, value, f"{value:,.0f}k", ha="center", va="bottom",
+                fontsize=8.5, fontweight="bold", color=ctx.p.INK)
+    finish(ig, skip=(3,))
+    ax.set_xlim(-0.6, len(ys) - 0.4)
+
+
 # The plates, in the order the page lists them. `slug` is the chapter id
 # the files have always been saved under, so no link breaks.
 SOURCE = {
@@ -874,7 +921,7 @@ SOURCE = {
                 "(GDP per person, ILO unemployment) · CMN (inflation target)"),
     "fiscal": ("IMF WEO / Fiscal Monitor (general government) · Tesouro "
                "Nacional (central-government primary result, carga "
-               "tributária) · Banco Central (DBGG, DLSP, NFSP)"),
+               "tributária) · Banco Central (DBGG, NFSP)"),
     "spending": ("Tesouro Nacional (COFOG, general government; RTN) · IBGE "
                  "(FBCF) · OECD National Accounts at a Glance (government GFCF)"),
     "trade": ("World Bank WDI (goods and services, % of GDP) · MDIC/SECEX "
@@ -894,6 +941,8 @@ SOURCE = {
                  "populations"),
     "mortality": ("Ministério da Saúde — SIM/DATASUS (TabNet, ICD-10) · IBGE "
                   "(population, projection model)"),
+    "migration": ("IBGE, Censos Demográficos 2010 e 2022 · UN World "
+                  "Population Prospects via World Bank WDI"),
 }
 
 PLATES = (
@@ -911,12 +960,12 @@ PLATES = (
          title="Public Finances — Balance, Debt and Interest, 2006–2025",
          subtitle=("General government on the IMF's basis, with the "
                    "Brazilian measures beside it: the central-government "
-                   "primary result, DBGG, DLSP and the NFSP interest bill."),
+                   "primary result, DBGG gross debt and the NFSP interest bill."),
          source="Sources: " + SOURCE["fiscal"],
          alt=("Four panels on Brazilian public finances: general-government "
               "revenue and expenditure with the tax burden; the overall "
               "balance as bars with the general-government and "
-              "central-government primary balances; gross debt on three "
+              "central-government primary balances; gross debt on two "
               "definitions; and interest paid, IMF and BCB.")),
     dict(slug="03_spending", topic="spending", builder=fig_spending,
          title="Where the Money Goes — Spending and Investment",
@@ -1006,4 +1055,9 @@ PLATES = (
          alt=("Four panels: the crude death rate from registered deaths; "
               "excess deaths against the 2015–19 average; COVID-19 deaths "
               "per 100,000; and influenza and dengue deaths per 100,000.")),
+    dict(slug="12_migration", topic="migration", builder=fig_migration,
+         title="Brazilian migration, on compatible definitions",
+         subtitle="Modelled net movement and census stocks; gross flows remain pending",
+         source="Sources: " + SOURCE["migration"],
+         alt="Gross immigration and emigration remain visibly pending because the published components imply impossible negative emigration in 2020. UN WPP supplies modelled net migration per 1,000. The 2022 census shows foreign-born and foreign-citizen shares, and the lens compares Latin-America-born residents in 2010 and 2022."),
 )

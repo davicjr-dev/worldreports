@@ -22,10 +22,14 @@ A chapter is declared in `countries/<slug>/chapters.py` and looks like this:
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
 from core import numstyle
+
+#: How many beats (mini-stories) a story may have.
+MIN_BEATS, MAX_BEATS = 3, 6
 
 # A no-break space, not U+202F: see core.numstyle.
 NBSP = numstyle.NBSP
@@ -42,7 +46,7 @@ NUMFMT = {
     "pct": "{:,.1f}", "pct_s": "{:+,.1f}", "pct2": "{:,.2f}",
     "pct_gdp": "{:,.1f}", "pct_gdp_s": "{:+,.1f}",
     "count": "{:,.0f}", "rank": "{:,.0f}", "score100": "{:,.0f}",
-    "dec3": "{:,.3f}", "dec2": "{:,.2f}",
+    "dec3": "{:,.3f}", "dec2": "{:,.2f}", "dec1": "{:,.1f}",
     "pop_mn": "{:,.1f}", "per100k": "{:,.1f}", "per100k2": "{:,.2f}",
     "years": "{:,.1f}", "index": "{:,.0f}",
 }
@@ -67,6 +71,7 @@ AFFIX = {
     "count":     {l: ("", "") for l in ("en", "fr", "pt", "es", "ko")},
     "dec3":      {l: ("", "") for l in ("en", "fr", "pt", "es", "ko")},
     "dec2":      {l: ("", "") for l in ("en", "fr", "pt", "es", "ko")},
+    "dec1":      {l: ("", "") for l in ("en", "fr", "pt", "es", "ko")},
     "index":     {l: ("", "") for l in ("en", "fr", "pt", "es", "ko")},
     "rank":      {l: ("#", "") for l in ("en", "fr", "pt", "es", "ko")},
     "score100":  {l: ("", "/100") for l in ("en", "fr", "pt", "es", "ko")},
@@ -129,7 +134,8 @@ CURRENCY_AFFIX = {
 # "{mag}" in a suffix is the style's own magnitude word, for the styles
 # that rescale onto a ladder (core.numstyle.LADDERS): 684 bn is written
 # 6,840億ドル, not 684億. A style without a ladder writes the spec's
-# magnitude one-for-one and never has the placeholder.
+# magnitude one-for-one, or one word up from a thousand (STEP_UP, below),
+# and never has the placeholder.
 _N = NBSP
 _STYLE_AFFIX = {
     # Duden and DIN 5008: a space before %, the amount before the unit,
@@ -233,9 +239,49 @@ _STYLE_AFFIX = {
         "usd_bn_s": ("", f"{_N}מיליארד דולר"),
         "usd_bn1": ("", f"{_N}מיליארד דולר"),
     },
+    # Ukrainian: a space before the percent sign (Ukrainian orthography),
+    # the amount before the unit, "№" for a rank, "млн"/"млрд"/"трлн" one
+    # for one. The hryvnia follows the amount: "2 991 млрд грн".
+    # Polish: the amount before the unit, "zł" after it, no space before
+    # %, "mld"/"bln" (miliard/bilion) and "24. miejsce".
+    "pl": {
+        "pct": ("", "%"), "pct_s": ("", "%"), "pct2": ("", "%"),
+        "pct_gdp": ("", "% PKB"), "pct_gdp_s": ("", "% PKB"),
+        "rank": ("", ". miejsce"), "score100": ("", "/100"),
+        "pop_mn": ("", f"{_N}mln"),
+        "per100k": ("", "/100 tys."), "per100k2": ("", "/100 tys."),
+        "years": ("", " lat"),
+        "usd_bn": ("", f"{_N}mld{_N}USD"),
+        "usd_bn_s": ("", f"{_N}mld{_N}USD"),
+        "usd_bn1": ("", f"{_N}mld{_N}USD"),
+    },
+    # Russian: a space before %, "млрд долл.", the rouble after the amount.
+    "ru": {
+        "pct": ("", f"{_N}%"), "pct_s": ("", f"{_N}%"), "pct2": ("", f"{_N}%"),
+        "pct_gdp": ("", f"{_N}% ВВП"), "pct_gdp_s": ("", f"{_N}% ВВП"),
+        "rank": ("", "-е место"), "score100": ("", "/100"),
+        "pop_mn": ("", f"{_N}млн"),
+        "per100k": ("", "/100 тыс."), "per100k2": ("", "/100 тыс."),
+        "years": ("", " лет"),
+        "usd_bn": ("", f"{_N}млрд{_N}долл."),
+        "usd_bn_s": ("", f"{_N}млрд{_N}долл."),
+        "usd_bn1": ("", f"{_N}млрд{_N}долл."),
+    },
+    "uk": {
+        "pct": ("", f"{_N}%"), "pct_s": ("", f"{_N}%"), "pct2": ("", f"{_N}%"),
+        "pct_gdp": ("", f"{_N}% ВВП"),
+        "pct_gdp_s": ("", f"{_N}% ВВП"),
+        "rank": ("№", ""), "score100": ("", "/100"),
+        "pop_mn": ("", f"{_N}млн"),
+        "per100k": ("", "/100 тис."), "per100k2": ("", "/100 тис."),
+        "years": ("", " років"),
+        "usd_bn": ("", f"{_N}млрд{_N}дол."),
+        "usd_bn_s": ("", f"{_N}млрд{_N}дол."),
+        "usd_bn1": ("", f"{_N}млрд{_N}дол."),
+    },
 }
 for _style, _forms in _STYLE_AFFIX.items():
-    for _spec in ("count", "dec3", "dec2", "index"):
+    for _spec in ("count", "dec3", "dec2", "dec1", "index"):
         _forms.setdefault(_spec, ("", ""))
     for _spec, _form in _forms.items():
         AFFIX[_spec][_style] = _form
@@ -263,6 +309,63 @@ _STYLE_CURRENCY = {
                      "de": ("", f"{_N}CHF")},
         "money2":   {"en": ("CHF ", ""), "pt": ("CHF ", ""),
                      "de": ("", f"{_N}CHF")},
+    },
+    "UAH": {
+        "money_bn": {"en": ("₴", "bn"), "uk": ("", f"{_N}млрд{_N}грн"),
+                     "pt": ("₴ ", " bi")},
+        "money_tn": {"en": ("₴", "tn"), "uk": ("", f"{_N}трлн{_N}грн"),
+                     "pt": ("₴ ", " tri")},
+        "money":    {"en": ("₴", ""), "uk": ("", f"{_N}грн"),
+                     "pt": ("₴ ", "")},
+        "money2":   {"en": ("₴", ""), "uk": ("", f"{_N}грн"),
+                     "pt": ("₴ ", "")},
+    },
+    "PLN": {
+        "money_bn": {"pl": ("", f"{_N}mld{_N}zł"), "en": ("PLN ", "bn"),
+                     "pt": ("PLN ", " bi")},
+        "money":    {"pl": ("", f"{_N}zł"), "en": ("PLN ", ""),
+                     "pt": ("PLN ", "")},
+    },
+    "RUB": {
+        "money_bn": {"ru": ("", f"{_N}млрд{_N}₽"), "en": ("RUB ", "bn"),
+                     "pt": ("RUB ", " bi")},
+        "money_tn": {"ru": ("", f"{_N}трлн{_N}₽"), "en": ("RUB ", "tn"),
+                     "pt": ("RUB ", " tri")},
+        "money":    {"ru": ("", f"{_N}₽"), "en": ("RUB ", ""),
+                     "pt": ("RUB ", "")},
+    },
+    "AUD": {
+        "money_bn": {"en": ("A$", "bn"), "pt": ("A$ ", " bi")},
+        "money":    {"en": ("A$", ""), "pt": ("A$ ", "")},
+    },
+    "SGD": {
+        "money_bn": {"en": ("S$", "bn"), "pt": ("S$ ", " bi")},
+        "money_tn": {"en": ("S$", "tn"), "pt": ("S$ ", " tri")},
+        "money":    {"en": ("S$", ""), "pt": ("S$ ", "")},
+    },
+    "HKD": {
+        "money_bn": {"en": ("HK$", "bn"), "zh-Hant": ("", "{mag}港元"),
+                     "pt": ("HK$ ", " bi")},
+        "money":    {"en": ("HK$", ""), "zh-Hant": ("", "港元"),
+                     "pt": ("HK$ ", "")},
+    },
+    "CLP": {
+        "money_bn": {"es": ("$ ", " mm"), "en": ("CLP ", "bn"),
+                     "pt": ("CLP$ ", " bi")},
+        "money":    {"es": ("$ ", ""), "en": ("CLP ", ""),
+                     "pt": ("CLP$ ", "")},
+    },
+    "PYG": {
+        "money_bn": {"es": ("₲ ", " mm"), "en": ("PYG ", "bn"),
+                     "pt": ("₲ ", " bi")},
+        "money":    {"es": ("₲ ", ""), "en": ("PYG ", ""),
+                     "pt": ("₲ ", "")},
+    },
+    "VES": {
+        "money_bn": {"es": ("Bs. ", " mm"), "en": ("VES ", "bn"),
+                     "pt": ("Bs. ", " bi")},
+        "money":    {"es": ("Bs. ", ""), "en": ("VES ", ""),
+                     "pt": ("Bs. ", "")},
     },
     "JPY": {
         "money_bn": {"en": ("¥", "bn"), "pt": ("¥ ", " bi"),
@@ -337,18 +440,70 @@ def localize_prose(text: str, style: str) -> str:
     return _IN_PROSE.sub(lambda m: numstyle.swap(m.group(0), style), text)
 
 
+# A style without a ladder writes the spec's magnitude one-for-one, which
+# leaves a GDP of 30,861 bn reading as "US$ 30,861bn". From a thousand of
+# the spec's unit up, the figure moves one word up instead, to three
+# significant digits: US$ 30.9tn, R$ 1,10 tri, 1.41bn people. Each entry
+# is (the word at the spec's magnitude, the word a thousand times larger)
+# as it appears in that style's suffix. A style that is absent keeps its
+# published form on purpose: French and Italian write thousands of
+# milliards ("2 991 Md€", INSEE and ISTAT usage), and neither pt-PT nor
+# Hebrew has a figure on the site large enough to need one. Population
+# steps up only in en and pt: no es, de or ko page has a billion people.
+STEP_UP_SPECS = {"money_bn", "usd_bn", "usd_bn_s", "usd_bn1", "pop_mn"}
+STEP_UP = {
+    "en": (("bn", "tn"), ("M", "bn")),
+    "pt": ((" bi", " tri"), (" mi", " bi")),
+    # billón = 10^12 (RAE). The Spanish dollar specs are written "bn".
+    "es": ((" mm", " billones"), ("bn", " billones")),
+    "de": (("Mrd.", "Bio."),),
+    "ko": (("십억", "조"),),
+    "uk": (("млрд", "трлн"), ("млн", "млрд")),
+    "pl": (("mld", "bln"), ("mln", "mld")),
+    "ru": (("млрд", "трлн"), ("млн", "млрд")),
+}
+_STEP_SIG = 3
+
+
+def _stepped_up(value: float, spec: str, style: str,
+                suffix: str) -> tuple[str, str] | None:
+    """`value` one magnitude word up, or None when it stays where it is."""
+    if spec not in STEP_UP_SPECS or not math.isfinite(value):
+        return None
+    # The threshold is the figure as it would print, so 999.6 bn steps up
+    # rather than rounding to "1,000bn", the form this rule exists to avoid.
+    shown = float(NUMFMT[spec].format(value).replace(",", ""))
+    if abs(shown) < 1000:
+        return None
+    for word, larger in STEP_UP.get(style, ()):
+        if word in suffix:
+            n = value / 1000
+            # Count the digits after rounding to three significant ones:
+            # 9.996 is 10.0, not 10.00.
+            digits = len(str(int(abs(float(f"{n:.{_STEP_SIG}g}")))))
+            sign = "+" if "{:+" in NUMFMT[spec] else ""
+            return (f"{n:{sign},.{max(0, _STEP_SIG - digits)}f}",
+                    suffix.replace(word, larger, 1))
+    return None
+
+
 def format_figure(value: float, spec: str, style: str,
                   prefix: str, suffix: str) -> str:
     """One figure in one number style, affixes included.
 
     A style with a magnitude ladder rescales the figure onto its own word
-    ("{mag}" in the suffix); every other style formats it with the spec's
-    NUMFMT and swaps the marks.
+    ("{mag}" in the suffix); a figure of a thousand or more of the spec's
+    unit moves one word up (STEP_UP); every other figure is formatted with
+    the spec's NUMFMT and has its marks swapped.
     """
     scaled = numstyle.rescaled(value, spec, style, NUMFMT[spec])
     if scaled is not None:
         n, mag = scaled
         return f"{prefix}{localize_number(n, style)}{suffix.replace('{mag}', mag)}"
+    stepped = _stepped_up(value, spec, style, suffix)
+    if stepped is not None:
+        n, suffix = stepped
+        return f"{prefix}{localize_number(n, style)}{suffix}"
     n = NUMFMT[spec].format(value)
     return f"{prefix}{localize_number(n, style)}{suffix}"
 
@@ -431,6 +586,81 @@ class SiteContext:
                 f"{self.c.slug}: copy is missing {missing} "
                 f"(got {sorted(per_locale)})")
         return {l: per_locale[l] for l in self.locales}
+
+    def fact(self, pairs, spec: str, year=None, kind="flow") -> dict:
+        """One figure for a story to quote: its value per locale, and its year.
+
+        Reads the series the way `stat` does — a flow stops at the last full
+        year, a level (kind='level') may be the running one, and `year`
+        picks one — but there is no label to write, because the sentence
+        around it is the label. A year with no value is an error: a story
+        that quotes a number the data do not have is the failure this
+        exists to prevent.
+        """
+        if kind == "flow" and year is None:
+            pairs = [p for p in pairs if p[0] <= self.LAST_FULL_YEAR]
+        p = self.last(pairs, year)
+        if p is None:
+            raise KeyError(f"{self.c.slug}: no value for a story fact "
+                           f"(year={year!r}, kind={kind!r})")
+        return {"value": self.render(p[1], spec), "year": p[0]}
+
+    def story(self, title: dict, beats: list, facts: dict | None = None
+              ) -> dict[str, dict]:
+        """The plain-language reading of one panel, one per locale.
+
+        A `title`, which states what the panel says rather than naming it,
+        and a few short `beats`: mini-stories, each a (head, text) pair of
+        `ctx.text(...)`. The first says how to read this kind of chart, the
+        middle ones take one thing the panel shows each (what it puts in
+        front, what it leaves behind), the last says what it does not tell.
+        Three to six, because fewer is a caption and more is a wall.
+
+        `{name}` anywhere in the title, a head or a text is filled with that
+        fact's value in the locale's own number style and `{name_year}` with
+        its year, so the sentence says what the CSV says and a refetch moves
+        both. A placeholder with no fact, or a fact nothing uses, fails the
+        build: the first prints a brace to a reader, the second is a number
+        that was reworded out of the story and will be wrong the next time
+        the data move.
+        """
+        if not MIN_BEATS <= len(beats) <= MAX_BEATS:
+            raise ValueError(
+                f"{self.c.slug}: a story has {MIN_BEATS} to {MAX_BEATS} "
+                f"beats, got {len(beats)}")
+        facts = facts or {}
+        used: set[str] = set()
+
+        def fill_in(text: str, loc: str) -> str:
+            def fill(m):
+                name, tail = m.group(1), m.group(2)
+                if name not in facts:
+                    raise KeyError(f"{self.c.slug}: story has no fact "
+                                   f"{name!r} for {{{name}{tail}}}")
+                used.add(name)
+                f = facts[name]
+                return str(f["year"] if tail else f["value"][loc])
+            return re.sub(r"\{(\w+?)(_year)?\}", fill, text)
+
+        def pick(copy: dict, what: str, loc: str) -> str:
+            if loc not in copy:
+                raise KeyError(f"{self.c.slug}: story {what} is missing "
+                               f"[{loc}] (got {sorted(copy)})")
+            return fill_in(copy[loc], loc)
+
+        out: dict[str, dict] = {}
+        for loc in self.locales:
+            out[loc] = {
+                "title": pick(title, "title", loc),
+                "beats": [{"head": pick(head, f"beat {i + 1} head", loc),
+                           "text": pick(text, f"beat {i + 1} text", loc)}
+                          for i, (head, text) in enumerate(beats)],
+            }
+        unused = sorted(set(facts) - used)
+        if unused:
+            raise KeyError(f"{self.c.slug}: story facts {unused} are "
+                           f"never used")
+        return out
 
     def stat(self, label: dict, pairs, spec: str, year=None, kind="flow"):
         """One headline figure, with the year it belongs to.

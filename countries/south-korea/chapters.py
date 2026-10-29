@@ -205,8 +205,8 @@ def build(ctx) -> list[dict]:
                 pt='O tamanho da economia em dólares, o desenvolvimento humano, como o mundo avalia a integridade da Coreia, e as reservas.'),
             "alt": ctx.text(
                 ko='한국의 국제적 위치를 다룬 네 개 패널. 명목 GDP는 2006년 1조 952억 달러에서 2025년 1조 8,724억 달러로 늘었다(로그 눈금). 인간개발지수는 0.871에서 0.937로 올라 0.900 기준선을 2012년에 넘었다. 부패인식지수는 2012년 56점에서 2024년 64점, 2025년 63점이며, 2012년 이전은 옛 0–10점 척도에 10을 곱해 옅게 그렸다. 외환보유액은 2,390억 달러에서 2025년 4,281억 달러로 늘었고, 한국은 2014년부터 순대외채권국이다.',
-                en='Four panels placing Korea internationally. GDP in current dollars grows from US$1,095 billion in 2006 to US$1,872 billion in 2025 (log scale). The Human Development Index rises from 0.871 to 0.937, crossing the 0.900 line in 2012. The Corruption Perceptions Index score goes from 56 in 2012 to 64 in 2024 and 63 in 2025; the years before 2012, on the old 0–10 scale, are drawn paler, multiplied by ten. Official reserves grow from US$239 billion to US$428 billion in 2025, and Korea has been a net creditor to the rest of the world since 2014.',
-                pt='Quatro painéis situando a Coreia no mundo. O PIB em dólares correntes cresce de US$1.095 bilhões em 2006 para US$1.872 bilhões em 2025 (escala log). O Índice de Desenvolvimento Humano sobe de 0,871 para 0,937 e cruza a linha de 0,900 em 2012. A pontuação no Índice de Percepção da Corrupção vai de 56 em 2012 para 64 em 2024 e 63 em 2025; os anos antes de 2012, na antiga escala de 0 a 10, aparecem mais claros, multiplicados por dez. As reservas crescem de US$239 bilhões para US$428 bilhões em 2025, e a Coreia é credora líquida do resto do mundo desde 2014.'),
+                en='Four panels placing Korea internationally. GDP in current dollars grows from US$1.10 trillion in 2006 to US$1.87 trillion in 2025 (log scale). The Human Development Index rises from 0.871 to 0.937, crossing the 0.900 line in 2012. The Corruption Perceptions Index score goes from 56 in 2012 to 64 in 2024 and 63 in 2025; the years before 2012, on the old 0–10 scale, are drawn paler, multiplied by ten. Official reserves grow from US$239 billion to US$428 billion in 2025, and Korea has been a net creditor to the rest of the world since 2014.',
+                pt='Quatro painéis situando a Coreia no mundo. O PIB em dólares correntes cresce de US$1,10 trilhão em 2006 para US$1,87 trilhão em 2025 (escala log). O Índice de Desenvolvimento Humano sobe de 0,871 para 0,937 e cruza a linha de 0,900 em 2012. A pontuação no Índice de Percepção da Corrupção vai de 56 em 2012 para 64 em 2024 e 63 em 2025; os anos antes de 2012, na antiga escala de 0 a 10, aparecem mais claros, multiplicados por dez. As reservas crescem de US$239 bilhões para US$428 bilhões em 2025, e a Coreia é credora líquida do resto do mundo desde 2014.'),
             "sources": ['intl/world.csv', 'macro/gdp.csv', 'social/hdi.csv', 'intl/cpi.csv',
                         'macro/reserves.csv', 'macro/external.csv'],
             "spark": ctx.col('intl/world.csv', 'gdp_usd_bn'),
@@ -302,6 +302,31 @@ def build(ctx) -> list[dict]:
                   ctx.col('social/mortality.csv', 'all_causes'), 'per100k'),
                 S({"ko": '코로나19 사망(누적)', "en": 'COVID-19 deaths', "pt": 'Mortes por COVID-19'},
                   ctx.col('social/covid.csv', 'deaths'), 'count', kind="total"),
+            ],
+        },
+        {
+            "id": '12_migration', "topic": "migration", "n": '12', "family": PEOPLE,
+            "title": ctx.text(ko='국제이동', en='Migration', pt='Migração'),
+            "blurb": ctx.text(
+                ko='90일을 초과해 들어오고 나간 사람, 그리고 인구주택총조사가 집계한 국내 거주 외국인.',
+                en='People who enter or leave for more than 90 days, and resident foreign citizens counted by the census.',
+                pt='Pessoas que entram ou saem por mais de 90 dias, e cidadãos estrangeiros residentes contados pelo censo.'),
+            "alt": ctx.text(
+                ko='한국의 국제이동을 다룬 네 개 패널. 입국자와 출국자는 내·외국인을 모두 포함한 90일 초과 국제이동으로, 인구 1천 명당 비율은 2025년 각각 13.3명과 11.8명이다. 순이동은 국경이 닫힌 2021년에만 마이너스다. 등록센서스가 11월 1일 기준으로 집계한 국내 거주 외국인은 2022년 175만 2천 명(3.4%)에서 2024년 204만 3천 명(3.9%)으로 늘었다. 이는 출생지가 아니라 국적 기준이다. 한국의 시선 패널은 같은 90일 초과 순이동을 내국인과 외국인으로 나눈다.',
+                en='Four panels on migration in South Korea. Immigration and emigration count Korean and foreign citizens entering or leaving for more than 90 days; in 2025 they are 13.3 and 11.8 per 1,000 residents. Net migration is negative only in 2021, when the borders closed. The register census counts 1.752 million resident foreign citizens (3.4%) in 2022 and 2.043 million (3.9%) in 2024, at 1 November; this is citizenship, not birthplace. The lens splits the same >90-day net flow between Korean and foreign citizens.',
+                pt='Quatro painéis sobre a migração na Coreia do Sul. Imigração e emigração contam cidadãos coreanos e estrangeiros que entram ou saem por mais de 90 dias; em 2025 são 13,3 e 11,8 por mil habitantes. A migração líquida só é negativa em 2021, quando as fronteiras fecharam. O censo de registros conta 1,752 milhão de cidadãos estrangeiros residentes (3,4%) em 2022 e 2,043 milhões (3,9%) em 2024, em 1º de novembro; é um corte por cidadania, não por local de nascimento. A lente separa o mesmo fluxo líquido de mais de 90 dias entre cidadãos coreanos e estrangeiros.'),
+            "sources": ['social/migration.csv',
+                        'migration/foreign_residents_census.csv',
+                        'migration/flows_by_citizenship.csv',
+                        'social/population.csv'],
+            "spark": ctx.col('social/migration.csv', 'net'),
+            "stats": [
+                S({"ko": '순이동', "en": 'Net migration', "pt": 'Migração líquida'},
+                  ctx.col('social/migration.csv', 'net'), 'count', kind="flow"),
+                S({"ko": '외국인 비중', "en": 'Foreign-citizen share',
+                   "pt": 'Parcela de cidadãos estrangeiros'},
+                  ctx.col('migration/foreign_residents_census.csv',
+                          'foreign_citizen_share_pct'), 'pct', kind="level"),
             ],
         },
     ]

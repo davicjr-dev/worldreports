@@ -23,6 +23,14 @@ def headline(ctx) -> list[dict]:
             {"es": 'PIB, {year}', "en": 'GDP, {year}', "pt": 'PIB, {year}'},
             ctx.col("macro/gdp.csv", "usd_bn"), "usd_bn1", kind="level"),
         ctx.stat(
+            {"es": 'PIB por persona, US$', "en": 'GDP per person, US$',
+             "pt": 'PIB por pessoa, US$'},
+            ctx.col("macro/world.csv", "gdp_per_person_usd"), "count"),
+        ctx.stat(
+            {"es": 'Población', "en": 'Population', "pt": 'População'},
+            ctx.col("macro/gdp.csv", "population_mn"), "pop_mn",
+            kind="level"),
+        ctx.stat(
             {"es": 'Inflación, {year}', "en": 'Inflation, {year}',
              "pt": 'Inflação, {year}'},
             ctx.col('macro/ipc.csv', 'official'), 'pct'),
@@ -359,5 +367,21 @@ def build(ctx) -> list[dict]:
                 es='Cuatro paneles sobre la mortalidad en la Argentina. La tasa bruta de mortalidad ronda 7,5 cada 1.000 habitantes y llega a 9,5 en 2021, con 436.799 muertes. Frente al promedio 2015-2019, de 341.328, hubo 10,2% más muertes en 2020 y 28,0% más en 2021. Las muertes por COVID-19 son 117 cada 100.000 en 2020 y 185 en 2021, 164.785 en total, confirmadas y probables juntas. La neumonía mata entre 40 y 87 personas cada 100.000 por año; la gripe casi no aparece, porque una gripe fatal se certifica como neumonía.',
                 en='Four panels on Argentine mortality. The crude death rate runs near 7.5 per 1,000 people and peaks at 9.5 in 2021, 436,799 deaths. Against the 2015-2019 average of 341,328, deaths were 10.2% higher in 2020 and 28.0% higher in 2021. COVID-19 deaths are 117 per 100,000 in 2020 and 185 in 2021, 164,785 in all, confirmed and probable together. Pneumonia kills 40 to 87 per 100,000 a year; influenza barely appears, because a fatal flu is certified as pneumonia.',
                 pt='Quatro painéis sobre a mortalidade na Argentina. A taxa bruta de mortalidade fica perto de 7,5 por 1.000 habitantes e chega a 9,5 em 2021, com 436.799 mortes. Contra a média de 2015-2019, de 341.328, houve 10,2% mais mortes em 2020 e 28,0% mais em 2021. As mortes por COVID-19 são 117 por 100.000 em 2020 e 185 em 2021, 164.785 no total, confirmadas e prováveis juntas. A pneumonia mata de 40 a 87 pessoas por 100.000 ao ano; a gripe quase não aparece, porque uma gripe fatal é certificada como pneumonia.'),
+        },
+        {
+            "id": "13-migration", "topic": "migration", "n": "13", "family": PEOPLE,
+            "title": ctx.text(es="Migración, sin confundir viajes con personas",
+                              en="Migration, without confusing trips with people",
+                              pt="Migração, sem confundir viagens com pessoas"),
+            "blurb": ctx.text(es="Migración neta modelada, población nacida en otro país y principales orígenes; los flujos brutos siguen pendientes.",
+                              en="Modelled net migration, the foreign-born census stock and leading origins; gross resident flows remain pending.",
+                              pt="Migração líquida modelada, população nascida no exterior e principais origens; os fluxos brutos seguem pendentes."),
+            "spark": ctx.col("migration/foreign_born_census.csv", "foreign_born_pct"),
+            "spark_level": True,
+            "stats": [ctx.stat({"es": "Nacidos en otro país", "en": "Foreign-born", "pt": "Nascidos no exterior"},
+                               ctx.col("migration/foreign_born_census.csv", "foreign_born_pct"), "pct", kind="level")],
+            "alt": ctx.text(es="Los flujos brutos de residentes están pendientes porque los movimientos de frontera cuentan viajes y las residencias cuentan decisiones. La migración neta modelada de la ONU se muestra cada mil habitantes. Los censos del INDEC muestran 4,5% de nacidos en otro país en 2010 y 4,2% en 2022, con Paraguay, Bolivia y Venezuela como los orígenes mostrados.",
+                            en="Gross resident flows remain pending because border movements count trips and residence grants count decisions. UN modelled net migration is shown per 1,000. INDEC censuses show 4.5% foreign-born in 2010 and 4.2% in 2022, with Paraguay, Bolivia and Venezuela as the origins shown.",
+                            pt="Os fluxos brutos de residentes seguem pendentes porque movimentos de fronteira contam viagens e residências contam decisões. A migração líquida modelada da ONU aparece por mil habitantes. Os censos do INDEC mostram 4,5% de nascidos no exterior em 2010 e 4,2% em 2022, com Paraguai, Bolívia e Venezuela como as origens mostradas."),
         },
     ]

@@ -63,6 +63,22 @@ silently choose the easiest interpretation.
 
 ## Classify every apparent data gap
 
+**A gap is not closed until every official route has been tried.** Do not
+leave a good source behind: before a slot is marked pending, the lane must
+have attempted, and recorded the result of, every route that could carry the
+series — the national publisher's own API and file downloads, its official
+mirrors and open-data portals (for Ukraine: `data.gov.ua`, the SDG portal),
+the central bank, the finance ministry, the customs authority, the treasury,
+the prosecutor/court statistics publisher, the market regulator, and the
+harmonised international layer (IMF, World Bank, OECD, Eurostat, UN bodies)
+including the agency's own API rather than only its republication. "The main
+site 403s" is a route result, not a finding that the data is unavailable.
+A slot may be skipped only when the statistic does not exist, is not
+published on any official route at all, or every route has been attempted
+and its failure mode recorded with a date. A chapter may not be omitted
+because the obvious publisher is blocked while a working official mirror or
+national publisher exists untried.
+
 Before calling a panel unavailable, determine which case actually applies:
 
 - **Not applicable or nonexistent:** for example, no national statutory
@@ -169,6 +185,31 @@ components share a compatible definition and vintage; document the formula and
 test a known result. Align series by year or date, never by list position.
 
 ## Verification and visual review
+
+### Comparison-scale contract
+
+The comparison viewer wipes one finished country SVG over another. Canonical
+panels therefore need more than the same topic and position: they must use the
+same indicator definition, denominator, unit, base year, axis type, limits and
+ticks. Follow `PLATE_SPINE.md` and `core/spine.py` exactly.
+
+- Put only the canonical definition in a canonical slot. A useful proxy or
+  adjacent national measure belongs in the lens or remains visibly pending;
+  disclosure does not make unlike units comparable.
+- Convert counts with the same-scope population and canonical denominator.
+  Do not mix people with households, gross with net, goods with goods and
+  services, admissions with total immigration, or a non-2006 index with a
+  `2006 = 100` slot.
+- Never set a canonical y-scale in country code. The atlas-wide range is the
+  one in `core/spine.py`, and pending panels inherit it too. If verified data
+  exceed it, update the shared range and regenerate every country carrying
+  that topic; never extend only one country.
+- Canonical time-series slots use the common year window. A one-year category
+  snapshot belongs in a lens, not in a canonical time-series slot.
+- Before opening a PR, run `python3 -m pytest tests/test_spine.py -q`. Its
+  comparison-contract test requires identical positions, scales, limits,
+  ticks and units across every peer. Then inspect representative overlay wipes
+  (a low, middle and outlier country) for every changed topic.
 
 During iteration, run focused country tests and renders. Before a country PR is
 ready, run from the repository root:

@@ -37,7 +37,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from core import sitebuild
+from core import sitebuild, spine
 from core.country import COUNTRIES_DIR, ROOT, Country
 
 SITE = ROOT / "site"
@@ -49,6 +49,10 @@ GOOGLE_ANALYTICS_ID = "G-7LKE9YHT74"
 # browser reserve the space before the image arrives, so the cards do not
 # jump as the grid fills.
 THUMB_W, THUMB_H = 560, 357
+
+# Every full plate is rendered at this size (core.render); stated on the
+# og:image so a share preview can lay out before the image arrives.
+PLATE_W, PLATE_H = 2720, 1733
 
 FAMILIES = ("money", "world", "people")
 
@@ -195,6 +199,21 @@ def _alternates(country: Country, ui: dict, local: dict, n: int) -> str:
     return "\n  ".join(out)
 
 
+def _keywords(country: Country, locale: str) -> list[str]:
+    """The seo keywords in one language.
+
+    Most countries declare one flat list; a country whose keywords are
+    themselves translated (Taiwan's) declares them per locale. Reading a
+    dict with `', '.join(...)` joins its keys — "zh-Hant, en, pt" as
+    keywords — so the shape is resolved here rather than at each use.
+    """
+    kw = country.seo.get("keywords")
+    if isinstance(kw, dict):
+        kw = kw.get(locale) or kw.get(country.default_locale) \
+            or next((v for v in kw.values() if v), [])
+    return [str(k) for k in (kw or [])]
+
+
 def _jsonld(country: Country, ch: Chrome, datasets: list[dict]) -> str:
     """A Dataset record, so the page is findable as data and not only as text.
 
@@ -212,7 +231,7 @@ def _jsonld(country: Country, ch: Chrome, datasets: list[dict]) -> str:
         "description": ch.tx(country.seo.get("description")),
         "url": f"{ORIGIN}/{country.slug}/{loc}/",
         "inLanguage": country.locale(loc).html_lang,
-        "keywords": list(country.seo.get("keywords") or []),
+        "keywords": _keywords(country, loc),
         "temporalCoverage": years,
         "spatialCoverage": country.seo.get("spatial") or ch.tx(country.name),
         "isAccessibleForFree": True,
@@ -470,6 +489,8 @@ def compare_index(countries: list[Country]) -> dict:
                     "title": (d["title"] or {}).get(code) or "",
                     "alt": (d.get("alt") or {}).get(code) or "",
                 }
+                if d.get("stories"):
+                    plates[code]["stories"] = _stories_for(d, code)
             topics.setdefault(topic, []).append({
                 "slug": c.slug,
                 "flag": c.flag_emoji,
@@ -508,6 +529,60 @@ def _plate_files(ch_data: dict, locale: str, default: str) -> tuple[str, str, st
             f"../output/{stem}.png")
 
 
+def _cell(topic: str, key: str) -> list[float]:
+    """Where a panel answers a click, as fractions of its plate."""
+    order = [s.key for s in spine.slots(topic)]
+    return [round(v, 4) for v in spine.panel_cell(order.index(key))]
+
+
+def _stories_for(ch_data: dict, locale: str) -> dict:
+    """One locale's stories for the comparison index: text and cell, by slot.
+
+    The viewer knows only the plate it is showing, so the other country's
+    side of a comparison needs its own story and its own cell carried here.
+    """
+    return {key: {"title": s[locale]["title"],
+                  "parts": [{"label": b["head"], "text": b["text"]}
+                            for b in s[locale]["beats"]],
+                  "cell": _cell(ch_data["topic"], key)}
+            for key, s in ch_data["stories"].items() if locale in s}
+
+
+def _stories(ch: Chrome, d: dict) -> str:
+    """What each panel of a plate says, for a reader who is not an expert.
+
+    In the card, in the document, folded away: like the data table it is
+    reachable without the script, indexable, and what the viewer's balloon
+    reads from. Panels are listed in the spine's reading order, each with
+    the cell the viewer treats as that panel.
+    """
+    stories = d.get("stories")
+    if not stories:
+        return ""
+    items = []
+    for slot in spine.slots(d["topic"]):
+        s = stories.get(slot.key)
+        if not s:
+            continue
+        cell = ",".join(f"{v:.4f}" for v in _cell(d["topic"], slot.key))
+        title = ch.tx({loc: v["title"] for loc, v in s.items()})
+        loc = next(l for l in ch._chain if l in s)
+        parts = "".join(
+            f'<p class="story__part"><strong class="story__label">'
+            f'{e(b["head"])}</strong> '
+            f'<span class="story__text">{e(b["text"])}</span></p>'
+            for b in s[loc]["beats"])
+        items.append(
+            f'<li class="story" data-slot="{e(slot.key)}" '
+            f'data-cell="{cell}">'
+            f'<h4 class="story__title">{e(title)}</h4>{parts}</li>')
+    return f"""<details class="data stories">
+          <summary>{e(ch.t("stories.show"))} · {len(items)}</summary>
+          <p class="src__lead">{e(ch.t("stories.lead"))}</p>
+          <ol class="story__list">{"".join(items)}</ol>
+        </details>"""
+
+
 def _card(country: Country, ch: Chrome, d: dict, i: int,
           provenance: dict, by_file: dict) -> str:
     title, blurb = ch.tx(d["title"]), ch.tx(d["blurb"])
@@ -540,6 +615,7 @@ def _card(country: Country, ch: Chrome, d: dict, i: int,
           <a href="{e(svg)}" download>{e(ch.t("download"))}</a>
           {_data_table(ch, d)}
           {_provenance(ch, provenance.get(d["id"], []), by_file)}
+          {_stories(ch, d)}
         </div>
         {_spark(ch, d["spark"]) if d.get("spark") else ""}
         <div class="stats">{stats}</div>
@@ -677,7 +753,8 @@ def _ui_json(ch: Chrome) -> str:
     runtime from countries this page does not otherwise mention.
     """
     keys = ("compare.none", "compare.lang", "compare.loading",
-            "compare.hint", "compare.clear")
+            "compare.hint", "compare.clear",
+            "story.kicker", "story.hint", "story.keys")
     return json.dumps({k: ch.t(k) for k in keys}, ensure_ascii=False)
 
 
@@ -723,6 +800,24 @@ def _viewer(ch: Chrome) -> str:
     <div class="viewer__stage" id="v-stage">
       <img class="viewer__img" id="v-img" alt="">
       <img class="viewer__img viewer__cmp" id="v-cmp" alt="" hidden>
+      <div class="hot" id="v-hot" hidden></div>
+      <div class="tip" id="v-tip" role="tooltip">
+        <strong class="tip__title" id="v-tip-title"></strong>
+        <span class="tip__cue">{e(ch.t("story.cue"))}</span>
+      </div>
+      <div class="read" id="v-read" aria-hidden="true">
+        <span class="read__line" id="v-read-line"></span>
+        <div class="read__card" id="v-read-card"></div>
+      </div>
+      <aside class="balloon" id="v-story" hidden role="dialog"
+             aria-labelledby="v-story-title">
+        <button type="button" class="tool tool--close balloon__close"
+                id="v-story-close"
+                aria-label="{e(ch.t("story.close"))}">×</button>
+        <span class="balloon__from" id="v-story-from"></span>
+        <h3 class="balloon__heading" id="v-story-title"></h3>
+        <div class="balloon__parts" id="v-story-body"></div>
+      </aside>
       <div class="vcmp" id="v-wipe" hidden>
         <span class="vcmp__edge"></span>
         <span class="vcmp__grip" tabindex="0" role="slider"
@@ -734,7 +829,8 @@ def _viewer(ch: Chrome) -> str:
     </div>
     <div class="viewer__foot">
       <button type="button" class="step" id="v-prev">←&nbsp;{e(ch.t("viewer.prev"))}</button>
-      <span class="viewer__hint">{e(ch.t("viewer.hint"))}</span>
+      <span class="viewer__hint">{e(ch.t("viewer.hint"))}
+        <span id="v-story-hint" hidden>{e(ch.t("story.hint"))}</span></span>
       <button type="button" class="step" id="v-next">{e(ch.t("viewer.next"))}&nbsp;→</button>
     </div>
   </div>"""
@@ -753,8 +849,16 @@ def country_page(country: Country, locale: str, chapters: list[dict],
     desc = ch.tx(country.seo.get("description"))
     cards = "\n    ".join(_card(country, ch, d, i, provenance, by_file)
                           for i, d in enumerate(chapters))
-    social = f"{ORIGIN}/{country.slug}/output/{chapters[0]['id']}.png" \
+    # The share image is the first plate in the page's own language — a
+    # Portuguese page shared into a feed should preview the Portuguese
+    # plate, not the English one behind the plain filename.
+    suffix = "" if locale == "en" else f".{locale}"
+    social = f"{ORIGIN}/{country.slug}/output/{chapters[0]['id']}{suffix}.png" \
         if chapters else ""
+    social_alt = ch.tx(chapters[0]["title"]) if chapters else ""
+    og_alt_locales = "\n  ".join(
+        f'<meta property="og:locale:alternate" content="{e(l.og_locale)}">'
+        for l in country.locales if l.code != locale)
 
     return f"""<!doctype html>
 <html lang="{e(loc.html_lang)}" dir="{e(loc.direction)}">
@@ -764,17 +868,26 @@ def country_page(country: Country, locale: str, chapters: list[dict],
   {_analytics()}
   <title>{e(title)}</title>
   <meta name="description" content="{e(desc)}">
-  <meta name="keywords" content="{e(', '.join(country.seo.get('keywords') or []))}">
+  <meta name="keywords" content="{e(', '.join(_keywords(country, locale)))}">
   <link rel="canonical" href="{ORIGIN}/{country.slug}/{locale}/">
   {_alternates(country, shared, local, len(chapters))}
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="worldreports.io">
   <meta property="og:locale" content="{e(loc.og_locale)}">
+  {og_alt_locales}
   <meta property="og:title" content="{e(title)}">
   <meta property="og:description" content="{e(desc)}">
   <meta property="og:url" content="{ORIGIN}/{country.slug}/{locale}/">
   <meta property="og:image" content="{e(social)}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="{PLATE_W}">
+  <meta property="og:image:height" content="{PLATE_H}">
+  <meta property="og:image:alt" content="{e(social_alt)}">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{e(title)}">
+  <meta name="twitter:description" content="{e(desc)}">
+  <meta name="twitter:image" content="{e(social)}">
+  <meta name="twitter:image:alt" content="{e(social_alt)}">
   <link rel="icon" href="data:image/svg+xml,{e('<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><text y=\".85\" font-size=\"1\">' + country.flag_emoji + '</text></svg>')}">
   <link rel="stylesheet" href="../../assets/app.css">
   <style>{css_vars(country)}</style>
@@ -930,9 +1043,13 @@ def home(countries: list[Country], shared: dict, built: str) -> str:
   <meta name="description" content="Data plates on {len(countries)} countries, {years[0]}–{years[1]}, built only from the statistics their own institutions publish and regenerated from committed CSVs.">
   <link rel="canonical" href="{ORIGIN}/">
   <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
   <meta property="og:title" content="worldreports.io">
   <meta property="og:description" content="Official statistics, country by country.">
   <meta property="og:url" content="{ORIGIN}/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="worldreports.io">
+  <meta name="twitter:description" content="Official statistics, country by country.">
   <link rel="icon" href="data:image/svg+xml,{e('<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><text y=\".85\" font-size=\"1\">🌍</text></svg>')}">
   <link rel="stylesheet" href="assets/app.css">
   <script type="application/ld+json">

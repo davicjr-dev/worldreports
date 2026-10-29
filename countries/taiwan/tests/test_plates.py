@@ -170,17 +170,49 @@ def test_social_protection_pair_adds_to_total():
         assert rest[float(y)] + soc[float(y)] == pytest.approx(want, abs=0.05)
 
 
+def _spending_card() -> dict[str, dict]:
+    """The spending chapter's card figures, by English label."""
+    for ch in sitebuild.chapters_for(Country.load(SLUG)):
+        stats = {s["label"]["en"]: s for s in ch["stats"]}
+        if "Total outlays (final accounts)" in stats:
+            return stats
+    raise AssertionError("no card carries 'Total outlays (final accounts)'")
+
+
+def test_spending_card_shares_use_the_plate_unit_factor():
+    """The card once inverted thousand-NTD ÷ million-NTD and printed
+    14,450,760.0% of GDP; it must agree with the plate's × 1e3 ÷ 1e6."""
+    stats = _spending_card()
+    spend = by_year("spending/function.csv")
+    gdp = by_year("economy/gdp.csv")
+    for label, col in (("Total outlays (final accounts)", "spending_total"),
+                       ("Social security & pensions",
+                        "spending_social_security_pension_subtotal")):
+        s = stats[label]
+        y = s["year"]
+        assert y in spend and y in gdp, f"{label}: {y} missing from a CSV"
+        want = num(spend[y], col) * 1e3 / (num(gdp[y], "gdp_nominal_ntd_mn") * 1e6) * 100
+        assert 0 < want < 100
+        assert s["value"]["en"] == f"{want:,.1f}% GDP"
+
+
+def test_spending_card_outlays_match_the_publishers_own_share():
+    """An independent check on the unit factor: MOF i2101 publishes its own
+    expenditure % of GDP (14.5 in 2025). The card divides by DGBAS GDP and
+    MOF rounds against its own, so they agree to within a rounding step,
+    not to the printed digit."""
+    s = _spending_card()["Total outlays (final accounts)"]
+    y = s["year"]
+    budget = by_year("fiscal/budget.csv")
+    assert y in budget, f"card year {y} is not in fiscal/budget.csv yet"
+    card = float(s["value"]["en"].removesuffix("% GDP"))
+    assert card == pytest.approx(num(budget[y], "expenditure_pct_gdp"), abs=0.15)
+
+
 # --------------------------------------------------------------------- trade
-def test_the_balance_is_the_difference_not_a_third_series():
-    gd = by_year("trade/goods.csv")
-    g = by_year("economy/gdp.csv")
-    want = (num(gd[2025], "exports_usd_thousands") - num(gd[2025], "imports_usd_thousands")) \
-        / 1e3 / num(g[2025], "gdp_nominal_usd_mn") * 100
-    assert want == pytest.approx(16.8, abs=0.1)
-    t = " ".join(texts("plate_trade", "Trade balance"))
-    assert "+16.8%" in t, "the gap label must print the difference once converted"
-    assert all(num(r, "exports_usd_thousands") >= num(r, "imports_usd_thousands")
-               for r in gd.values()), "the never-in-deficit note"
+def test_goods_only_data_do_not_occupy_goods_and_services_slots():
+    is_pending("plate_trade", "Exports and imports, goods and services")
+    is_pending("plate_trade", "Trade balance, goods and services")
 
 
 def test_the_twice_counted_lens_keeps_both_counts_apart():
@@ -406,11 +438,49 @@ def test_hdi_absent_but_ti_cpi_is_drawn():
     assert drawn[2025.0] == pytest.approx(68)
 
 
+# -------------------------------------------------------------------- people
+def test_people_definitions_and_wage_conversion():
+    g = by_year("people/gini.csv")
+    p = by_year("people/poverty.csv")
+    w = by_year("people/minimum_wage.csv")
+    fx = by_year("economy/gdp.csv")
+    assert num(g[2025], "gini_points") == 34.1
+    assert num(g[2025], "quintile_ratio") == 6.17
+    assert num(p[2024], "relative_poverty_pct") == 7.57
+    assert num(w[2025], "monthly_usd_at_avg_fx") == pytest.approx(
+        num(w[2025], "monthly_ntd_calendar_average")
+        / num(fx[2025], "avg_fx_ntd_per_usd"), abs=0.01)
+    drawn = plate(SLUG, "plate_people")
+    assert drawn.panel("Gini").points("DGBAS")[2025.0] == pytest.approx(34.1)
+    assert drawn.panel("minimum wage").points("Calendar-average")[2025.0] == pytest.approx(916.64)
+
+
+# ----------------------------------------------------------------- migration
+def test_registration_flows_are_components_not_border_trips():
+    f = by_year("migration/registration_flows.csv")
+    for year, expected in {2018: 9309, 2021: -155696,
+                           2023: 225980, 2024: 47613}.items():
+        assert num(f[year], "registered_net") == expected
+        assert (num(f[year], "registered_immigration")
+                - num(f[year], "registered_emigration")) == expected
+
+
+def test_arc_stock_is_not_drawn_as_foreign_born():
+    is_pending("plate_migration", "Foreign-born share")
+    nia = by_year("migration/foreign_residents.csv")
+    assert num(nia[2025], "arc_foreign_residents_dec") == 1028945
+    assert num(nia[2025], "foreign_labour_dec") == 751806
+    lens = plate(SLUG, "plate_migration").panel("valid ARC")
+    assert lens.points("ARC residents")[2025.0] == pytest.approx(1.028945)
+    assert lens.points("foreign labour")[2025.0] == pytest.approx(0.751806)
+
+
 # -------------------------------------------------------------- global rules
 @pytest.mark.parametrize("panel_slug", [
     "plate_economy", "plate_fiscal", "plate_trade", "plate_credit",
     "plate_spending", "plate_demography", "plate_security",
-    "plate_mortality", "plate_markets", "plate_world"])
+    "plate_mortality", "plate_markets", "plate_world", "plate_people",
+    "plate_migration"])
 def test_nothing_is_clipped(panel_slug):
     for p in plate(SLUG, panel_slug).panels():
         p.nothing_is_clipped()

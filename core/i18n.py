@@ -237,6 +237,24 @@ _UNITS.update({
         "vi", [(r"US\$", "USD", "USD"), ("₫", "đồng", "₫"),
                ("€", "EUR", "EUR")],
         "/100,000 dân", f"{NBSP}điểm %", gap=NBSP),
+    # Ukrainian: the currency after the amount ("30,9 млрд дол."), a space
+    # before the percent sign (Ukrainian orthography), and the magnitudes
+    # written one-for-one — "млрд" is 10^9, "трлн" 10^12.
+    "uk": _one_for_one(
+        [("₴", "грн"), (r"US\$", "дол."), ("€", "євро")],
+        {"tn": "трлн", "bn": "млрд", "mn": "млн"},
+        "/100 тис. осіб", f"{NBSP}в.п.", pct_space=True),
+    # Polish: the amount first ("30,9 mld USD"), "zł" after it, no space
+    # before the percent sign (Polish typography).
+    "pl": _one_for_one(
+        [("zł", "zł"), (r"US\$", "USD"), ("€", "euro")],
+        {"tn": "bln", "bn": "mld", "mn": "mln"},
+        "/100 tys.", f"{NBSP}p.p."),
+    # Russian: a space before %, "млрд долл.", the rouble after the amount.
+    "ru": _one_for_one(
+        [("₽", "₽"), (r"US\$", "долл."), ("€", "евро")],
+        {"tn": "трлн", "bn": "млрд", "mn": "млн"},
+        "/100 тыс.", f"{NBSP}п.п.", pct_space=True),
 })
 
 # Korean writes the currency after the number. These run last, on a string
@@ -492,6 +510,18 @@ def translate(text: str) -> str:
             # A translation is written with its own separators already.
             out.append(line.replace(stripped, hit))
     return "\n".join(out)
+
+
+def known(text: str) -> str | None:
+    """A string in the target language if the catalog has it, else None.
+
+    Unlike translate(), a miss is not recorded as a gap: it is for text that
+    is not drawn on the plate (a series name that is only read back from it),
+    where a missing translation costs nothing and must not fail the build.
+    """
+    if LANG == "en":
+        return text
+    return _load_catalog(LANG).get(text.strip())
 
 
 class _LocalizedFormatter(mticker.Formatter):

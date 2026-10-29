@@ -259,7 +259,7 @@ def plate_fiscal(ctx, ig):
     _legend(ctx, ax, loc="upper left", fontsize=8.0)
     _note(ctx, ax, "Federal gross debt includes what the Social Security\n"
                    "and Medicare trust funds hold; held by the public does not.",
-          y=0.04)
+          x=0.985, y=0.96, ha="right", va="top")
 
     ax = ig.slot("fiscal.interest", "Interest paid")
     gdp = _d(ctx, "macro/gdp.csv", "nominal_usdbn")
@@ -282,7 +282,7 @@ def plate_fiscal(ctx, ig):
     if cross:
         _note(ctx, ax, f"FY{cross}: federal net interest, {_fmt_bn(net[cross])},\n"
                        f"passed national defense, {_fmt_bn(defense[cross])}.",
-              y=0.05)
+              x=0.985, y=0.96, ha="right", va="top")
 
 
 # =============================================================== spending
@@ -411,8 +411,8 @@ def plate_trade(ctx, ig):
               getattr(ctx.p, colour), label=name, lw=2.2)
     _frame(ig, ax)
     _legend(ctx, ax, loc="upper left", ncol=3, fontsize=8.0)
-    _note(ctx, ax, "Census, goods on the customs basis.", y=0.04,
-          x=0.985, ha="right")
+    _note(ctx, ax, "Census, goods on the customs basis.", y=0.96,
+          x=0.985, ha="right", va="top")
 
     ax = ig.slot("trade.lens", "Where the goods come from")
     imports_total = _d(ctx, "trade/goods.csv", "imports")
@@ -488,7 +488,7 @@ def plate_markets(ctx, ig):
     last = max(usd)
     peak = max(usd, key=usd.get)
     _label(ctx, ax, peak, usd[peak], f"{usd[peak]:.0f} in {peak}",
-           ctx.p.NAVY, offset=(0, 7))
+           ctx.p.NAVY, offset=(0, -8), va="top")
     _legend(ctx, ax, loc="lower right")
     _note(ctx, ax, "Federal Reserve H.10, trade-weighted. The dollar is the\n"
                    "base currency, so the US line is a basket, not a rate.",
@@ -630,11 +630,7 @@ def plate_people(ctx, ig):
 
     ax = ig.slot("people.minimum_wage", "The federal minimum wage, a month of full-time work")
     mw = _d(ctx, "social/minimum_wage.csv", "federal_min_jan1")
-    idx = _d(ctx, "macro/cpi.csv", "index")
-    base = ctx.LAST_FULL_YEAR
     month = _scale(mw, HOURS_PER_MONTH)
-    real = {y: v * idx[base] / idx[y] for y, v in month.items() if y in idx}
-    _line(ctx, ax, real, ctx.p.RED, label=f"in {base} dollars (CPI-U)", lw=2.4)
     _line(ctx, ax, month, ctx.p.NAVY, label="in the dollars of the day",
           lw=2.6)
     _frame(ig, ax)
@@ -936,6 +932,47 @@ def plate_violence(ctx, ig):
                    f"most of them suicides.", y=0.05, x=0.985, ha="right")
 
 
+# ============================================================= migration
+def plate_migration(ctx, ig):
+    ax = ig.slot("migration.flows",
+                 "Gross PEP immigration and emigration — unpublished")
+    ctx.pending(ax)
+    _frame(ig, ax, slot1=True)
+    _note(ctx, ax,
+          "Census publishes the adjusted net component, but not its\n"
+          "gross components separately. DHS events are not substitutes.",
+          x=0.5, y=0.34, ha="center")
+    ax = ig.slot("migration.net",
+                 "Net international migration — Census PEP")
+    rate = _d(ctx, "social/components.csv", "net_migration_rate")
+    _line(ctx, ax, rate, ctx.p.NAVY, label="Census PEP, per 1,000", lw=2.6)
+    _frame(ig, ax)
+    _legend(ctx, ax, loc="upper left")
+    stock = "migration/stock_acs.csv"
+    total = _d(ctx, stock, "total_population")
+    foreign = _d(ctx, stock, "foreign_born")
+    noncitizen = _d(ctx, stock, "noncitizen")
+    ax = ig.slot("migration.foreign_born", "Foreign-born and noncitizen share")
+    _line(ctx, ax, _ratio(foreign, total), ctx.p.NAVY, label="foreign-born", lw=2.6)
+    _thin(ctx, ax, _ratio(noncitizen, total), ctx.p.RED, label="noncitizen")
+    _frame(ig, ax)
+    _legend(ctx, ax, loc="upper left")
+    _note(ctx, ax,
+          "ACS B05002; birthplace and citizenship are different cuts.",
+          y=0.05)
+    ax = ig.slot("migration.lens",
+                 "Lens: citizenship within the foreign-born stock")
+    naturalized = _d(ctx, stock, "naturalized")
+    _line(ctx, ax, _ratio(naturalized, foreign), ctx.p.NAVY,
+          label="naturalized US citizens", lw=2.6)
+    _line(ctx, ax, _ratio(noncitizen, foreign), ctx.p.RED,
+          label="not US citizens", lw=2.2)
+    _frame(ig, ax)
+    ax.set_ylabel("% of foreign-born", fontsize=8.6, color=ctx.p.muted)
+    ax.set_ylim(0, 100)
+    _legend(ctx, ax, loc="upper left")
+
+
 # ------------------------------------------------------------- the plates
 def _src(*parts: str) -> str:
     return "Sources: " + " · ".join(parts)
@@ -1010,8 +1047,8 @@ PLATES = (
               "its 2013 and 2017 method breaks, with the World Bank Gini "
               "beside it; the official and supplemental poverty rates and "
               "the World Bank's US$8.30-a-day line; the federal minimum wage "
-              "as a month of full-time work, in current and constant "
-              "dollars; and child poverty on the official and supplemental "
+              "as a month of full-time work in current dollars; and child "
+              "poverty on the official and supplemental "
               "measures, where the 2021 Child Tax Credit shows on one and "
               "not the other.")),
     dict(id="07", slug="world", topic="world", builder=plate_world,
@@ -1069,4 +1106,10 @@ PLATES = (
               "against the policy rate; the share of balances 90 days or "
               "more delinquent, by type; and household debt by type in US "
               "dollars.")),
+    dict(id="12", slug="migration", topic="migration", builder=plate_migration,
+         title="Migration, without mixing unlike measures",
+         subtitle="Census net migration and ACS birthplace and citizenship stocks",
+         source=_src("Census Bureau, Population Estimates Program",
+                     "Census Bureau, ACS 1-year table B05002"),
+         alt=("Gross Census PEP immigration and emigration are visibly pending because Census does not publish the components separately. The PEP net migration rate is shown per 1,000. ACS B05002 shows foreign-born and noncitizen shares, and the lens divides the foreign-born stock into naturalized citizens and noncitizens.")),
 )

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import itertools
 import math
+import re
 import textwrap
+import warnings
 from pathlib import Path
 
 import matplotlib
@@ -22,7 +24,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
 
-from core import context, i18n, qa, rates, render, sitebuild, spine, style  # noqa: E402
+from core import context, i18n, rates, render, sitebuild, spine, style  # noqa: E402
 from core.country import Country  # noqa: E402
 
 TOL = 1e-6
@@ -57,8 +59,13 @@ def drawn(country) -> list[tuple[render.Plate, style.Infographic, str]]:
     return out
 
 
-def check_plate(ig: style.Infographic) -> list[str]:
-    """What is wrong with one composed spine plate, or nothing."""
+def check_plate(ig: style.Infographic, cells: bool = True) -> list[str]:
+    """What is wrong with one composed spine plate, or nothing.
+
+    `cells` holds it to the cells the viewer finds its panels by; that only
+    matters to a plate that has stories to open, so a country is held to it
+    chapter by chapter as it writes them (see check_country).
+    """
     where = f"{ig.country.slug}/{ig.topic}"
     if ig.topic is None:
         return [f"{ig.country.slug}: a plate with no topic"]
@@ -89,23 +96,24 @@ def check_plate(ig: style.Infographic) -> list[str]:
             bad.append(f"{where}: slot {i + 1} carries {ax.get_gid()!r}, "
                        f"the spine puts {s.key!r} there")
             continue
-        if not s.canonical or getattr(ax, "spine_pending", False):
+        if not s.canonical:
             continue
         lo, hi = ax.get_ylim()
         if s.scale == spine.LOG and ax.get_yscale() != "log":
             bad.append(f"{where}: {s.key} is not on a log axis")
         if s.scale == spine.LINEAR and ax.get_yscale() != "linear":
             bad.append(f"{where}: {s.key} should be linear")
-        marked = any(t.get_gid() == spine.EXTENDED_GID for t in ax.texts)
         rlo, rhi = s.ref
         on_ref = math.isclose(lo, rlo, abs_tol=TOL) and \
             math.isclose(hi, rhi, abs_tol=TOL)
-        if not marked and not on_ref:
+        if not on_ref:
             bad.append(f"{where}: {s.key} drawn on ({lo:g}, {hi:g}), not "
-                       f"its reference {s.ref} and not marked extended")
-        if marked and (on_ref or lo > rlo + TOL or hi < rhi - TOL):
-            bad.append(f"{where}: {s.key} marked extended on ({lo:g}, "
-                       f"{hi:g}), which does not contain {s.ref}")
+                       f"its shared comparison scale {s.ref}")
+        if getattr(ax, "spine_extended", False):
+            bad.append(f"{where}: {s.key} has a country-local extension")
+
+    if cells:
+        bad += cell_faults(ig)
 
     # Across every axes on the plate, twins and lenses included: nothing
     # inverted and nothing clipped.
@@ -122,6 +130,40 @@ def check_plate(ig: style.Infographic) -> list[str]:
                     or ext[1] > hi + TOL * max(1, abs(hi))):
             bad.append(f"{where}: {name} clips its data: {ext} outside "
                        f"({lo:g}, {hi:g})")
+    return bad
+
+
+def cell_faults(ig: style.Infographic) -> list[str]:
+    """Panels that draw outside the cell the spine says they occupy.
+
+    The viewer finds the panel under a click from `spine.panel_cell`, which
+    repeats the margins this figure was built with. A panel whose title,
+    ticks or labels spill out of its cell would answer to its neighbour, and
+    a margin changed in one place and not the other would do it to all of
+    them, so every spine plate is held to its cells here.
+    """
+    where = f"{ig.country.slug}/{ig.topic}"
+    renderer = ig.fig.canvas.get_renderer()
+    to_figure = ig.fig.transFigure.inverted()
+    bad = []
+    for i, ax in enumerate(ig.axes_flat):
+        if not ax.get_visible():
+            continue
+        left, top, width, height = spine.panel_cell(i)
+        x0, y0, x1, y1 = left, 1 - top - height, left + width, 1 - top
+        with warnings.catch_warnings():
+            # Measuring draws the tick labels for the first time, and a
+            # signed axis asks the font for a minus sign it may not have.
+            # The plate is written through the same font, so this says
+            # nothing about the layout being checked.
+            warnings.filterwarnings("ignore", message="Glyph 8722")
+            ink = ax.get_tightbbox(renderer).transformed(to_figure)
+        if (ink.x0 < x0 - TOL or ink.x1 > x1 + TOL
+                or ink.y0 < y0 - TOL or ink.y1 > y1 + TOL):
+            bad.append(f"{where}: panel {i + 1} draws "
+                       f"({ink.x0:.3f}, {ink.y0:.3f})–({ink.x1:.3f}, "
+                       f"{ink.y1:.3f}) outside its cell "
+                       f"({x0:.3f}, {y0:.3f})–({x1:.3f}, {y1:.3f})")
     return bad
 
 
@@ -144,8 +186,10 @@ def check_country(country) -> list[str]:
                 bad.append(f"{country.slug}: chapter {ch['id']} is topic "
                            f"{ch.get('topic')!r}, its plate declares "
                            f"{ig.topic!r}")
-        for _, ig, _ in plates:
-            bad += check_plate(ig)
+        told = {ch["id"] for ch in sitebuild.chapters_for(country)
+                if ch.get("stories")}
+        for _, ig, stem in plates:
+            bad += check_plate(ig, cells=stem in told)
         return bad
     finally:
         plt.close("all")
@@ -174,6 +218,41 @@ def test_a_spine_country_can_say_the_spine_in_its_languages(spine_country):
             for code in spine_country.locale_codes
             if code != "en" and not (cat.get(s) or {}).get(code)]
     assert not gaps, f"{spine_country.slug}: untranslated " + ", ".join(gaps)
+
+
+def test_comparison_peers_use_identical_canonical_axes():
+    """The viewer wipes finished SVG pixels; every transform must register."""
+    signatures = {}
+    owners = {}
+    try:
+        for country in SPINE_COUNTRIES:
+            for _, ig, _ in drawn(country):
+                for ax in ig.axes_flat:
+                    s = getattr(ax, "spine_slot", None)
+                    if s is None or not s.canonical:
+                        continue
+                    assert getattr(ax, "spine_unit", None) == s.unit
+                    assert ax.get_ylabel() == s.unit, \
+                        f"{country.slug}/{s.key}: {ax.get_ylabel()!r} != {s.unit!r}"
+                    sig = (
+                        tuple(round(v, 9) for v in ax.get_position().bounds),
+                        ax.get_xscale(), ax.get_yscale(),
+                        tuple(round(v, 9) for v in ax.get_xlim()),
+                        tuple(round(v, 9) for v in ax.get_ylim()),
+                        tuple(round(float(v), 9) for v in ax.get_xticks()),
+                        tuple(round(float(v), 9) for v in ax.get_yticks()),
+                        s.unit,
+                    )
+                    if s.key in signatures:
+                        assert sig == signatures[s.key], (
+                            f"{country.slug}/{s.key} does not register with "
+                            f"{owners[s.key]}: {sig} != {signatures[s.key]}")
+                    else:
+                        signatures[s.key] = sig
+                        owners[s.key] = country.slug
+            plt.close("all")
+    finally:
+        plt.close("all")
 
 
 # ---------------------------------------------------------- the table
@@ -212,20 +291,18 @@ def test_the_spine_table_is_well_formed():
                 assert not s.ticks, s.key
 
 
-def test_a_grown_log_axis_keeps_its_ladder():
+def test_a_log_axis_uses_the_declared_ladder():
     s = spine.SLOTS["markets.currency"]
-    assert spine.log_ticks(s, *s.ref) == [10, 20, 50, 100, 200]
-    grown = spine.log_ticks(s, 0.4, 200)
-    assert grown[:4] == [0.5, 1, 2, 5]
+    assert spine.log_ticks(s, *s.ref) == list(s.ticks)
     assert spine.tick_label(0.5) == "0.5"
     assert spine.tick_label(50_000) == "50,000"
 
 
-def test_a_symmetric_range_grows_symmetrically():
+def test_data_outside_a_shared_scale_fail_loudly():
     s = spine.SLOTS["economy.growth"]
-    (lo, hi), grew = spine.fit(s, (-20, 5))
-    assert grew and lo == -hi and lo < -20
-    assert spine.fit(s, (-3, 5)) == ((-12, 12), False)
+    with pytest.raises(spine.SpineError, match="atlas-wide range"):
+        spine.fit(s, (-40, 5))
+    assert spine.fit(s, (-3, 5)) == (s.ref, False)
 
 
 def test_a_log_slot_refuses_a_value_it_cannot_draw():
@@ -344,36 +421,22 @@ def test_a_synthetic_spine_country_passes(tmp_path):
     assert check_country(c) == []
 
 
-def test_data_past_the_reference_grow_the_axis_and_say_so(tmp_path):
+def test_data_past_the_shared_scale_fail_the_render(tmp_path):
     c = synthetic(tmp_path, "GROWTH_2020 = -21.0\nHOMICIDE = 300.0\n")
-    try:
-        ig = _plate(c, "economy")
-        ax = ig.axes_flat[0]
-        lo, hi = ax.get_ylim()
-        assert lo < -21 and hi == -lo, (lo, hi)
-        assert ax.spine_extended
-        marks = [t for t in ax.texts if t.get_gid() == spine.EXTENDED_GID]
-        assert [t.get_text() for t in marks] == [spine.EXTENDED]
-        outside = [f for f in qa.inspect(ig.fig) if f.startswith("OUTSIDE")]
-        assert not outside, outside
-        # The untouched slots stay exactly on their reference.
-        assert ig.axes_flat[3].get_ylim() == (0, 30)
-        assert not ig.axes_flat[3].spine_extended
-
-        sec = _plate(c, "security")
-        hom = sec.axes_flat[0]
-        assert hom.get_yscale() == "log" and hom.get_ylim()[1] > 300
-        assert hom.spine_extended
-    finally:
-        plt.close("all")
-    assert check_country(c) == []
+    with pytest.raises(spine.SpineError, match="shared comparison scale"):
+        check_country(c)
+    plt.close("all")
 
 
-def test_a_pending_slot_is_left_as_drawn(tmp_path):
+def test_a_pending_slot_inherits_the_shared_axis(tmp_path):
     c = synthetic(tmp_path)
     try:
         ax = _plate(c, "economy").axes_flat[2]
-        assert ax.spine_pending and not hasattr(ax, "spine_extended")
+        s = spine.SLOTS["economy.inflation"]
+        assert ax.spine_pending
+        assert ax.get_yscale() == s.scale
+        assert ax.get_ylim() == s.ref
+        assert not ax.spine_extended
     finally:
         plt.close("all")
 
@@ -460,6 +523,49 @@ def test_next_panel_is_refused_on_a_spine_plate(tmp_path):
     plt.close("all")
 
 
+def test_the_panel_cells_tile_the_plate_in_reading_order():
+    cells = [spine.panel_cell(i) for i in range(4)]
+    for left, top, width, height in cells:
+        assert width > 0 and height > 0
+        assert left >= 0 and top >= 0
+        assert left + width <= 1 + TOL and top + height <= 1 + TOL
+    for a, b in itertools.combinations(cells, 2):
+        apart_x = a[0] + a[2] <= b[0] + TOL or b[0] + b[2] <= a[0] + TOL
+        apart_y = a[1] + a[3] <= b[1] + TOL or b[1] + b[3] <= a[1] + TOL
+        assert apart_x or apart_y, f"{a} overlaps {b}"
+    # 1 top-left, 2 top-right, 3 bottom-left, 4 bottom-right: each row sits
+    # above the next and each left panel left of its right-hand neighbour.
+    for left, right in ((0, 1), (2, 3)):
+        assert cells[left][0] + cells[left][2] <= cells[right][0] + TOL
+    for upper, lower in ((0, 2), (1, 3)):
+        assert cells[upper][1] + cells[upper][3] <= cells[lower][1] + TOL
+
+
+def test_the_four_cells_are_the_same_size():
+    """So the panels lift, and are isolated, at one size."""
+    sizes = {(round(c[2], 4), round(c[3], 4))
+             for c in (spine.panel_cell(i) for i in range(4))}
+    assert len(sizes) == 1, sizes
+
+
+def test_a_cell_exists_only_for_the_four_panels():
+    for bad in (-1, 4):
+        with pytest.raises(IndexError):
+            spine.panel_cell(bad)
+
+
+def test_a_panel_that_leaves_its_cell_is_caught(tmp_path):
+    """The check is known to bite: move the margins and it says so."""
+    c = synthetic(tmp_path)
+    try:
+        ig = _plate(c, "security")
+        assert cell_faults(ig) == []
+        ig.fig.subplots_adjust(left=0.30)
+        assert any("outside its cell" in b for b in cell_faults(ig))
+    finally:
+        plt.close("all")
+
+
 def test_a_plate_off_the_spine_is_untouched(tmp_path):
     """Unmigrated plates keep next_panel, any grid and their own limits."""
     ig = context.Context(synthetic(tmp_path)).fig("t", "s", ncols=3)
@@ -470,6 +576,19 @@ def test_a_plate_off_the_spine_is_untouched(tmp_path):
     assert ax.get_ylim() == (4, 7)
     assert ig.fig.subplotpars.right == pytest.approx(0.955)
     plt.close("all")
+
+
+def test_svg_output_has_no_trailing_horizontal_whitespace(tmp_path):
+    c = synthetic(tmp_path)
+    i18n.bind(c)
+    i18n.set_lang("en")
+    ig = context.Context(c).fig("t", "s")
+    ax = ig.next_panel("x")
+    ax.plot([2006, 2007], [5, 6], marker="o")
+    out = tmp_path / "plate.png"
+    ig.save(out)
+    raw = out.with_suffix(".svg").read_bytes()
+    assert not re.search(rb"[ \t]+(?=\r?$)", raw, flags=re.MULTILINE)
 
 
 # ------------------------------------------------------------------ rates

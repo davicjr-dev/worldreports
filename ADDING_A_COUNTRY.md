@@ -304,12 +304,46 @@ the magnitude word (`Mrd.`, `mil milhões`, `bi`), the currency on the side
 that language puts it, and — in Japanese, Chinese and Vietnamese — the
 figure *rescaled* onto the language's own magnitudes, so `money_tn` 636.9
 for Japan is `637兆円` and `usd_bn` 684.4 is `6,844億ドル`
-(`core.numstyle.LADDERS`). Every style and currency in the atlas, with
+(`core.numstyle.LADDERS`). Elsewhere a figure of a thousand or more of
+the spec's unit moves one word up, to three significant digits —
+`usd_bn` 30,861 is `US$ 30.9tn`, `R$ 1,10 tri`, `1,04 Bio. US-$` —
+except in French and Italian, which keep `2 991 Md€` and `2.265 mld €`
+(`core.sitebuild.STEP_UP`). Every style and currency in the atlas, with
 its exact output, is pinned in `tests/test_numbers.py`; a new currency
 needs a `CURRENCY_AFFIX` entry for every style its country publishes. `kind=` says whether it is current: `flow` for an annual total,
 only comparable once the year is complete; `level` for a stock or a rate
 read at a moment; `projection` for an official forward estimate. Getting
 this wrong puts a half-finished year on a card as though it were a result.
+
+#### Stories (optional)
+
+A chapter may carry a `"stories"` entry: for each of its panels, a short reading
+the viewer opens beside the isolated chart. Brazil's are the reference
+(`countries/brasil/stories.py`, one `<topic>_stories(ctx)` function per chapter,
+loaded from `chapters.py` with `core.sideload.sibling`):
+
+```python
+"stories": {"economy.growth": ctx.story(
+    title=ctx.text(en="GDP only passed its 2014 level in {back_year}", pt="..."),
+    beats=[(ctx.text(en="Two falls add up to double the covid one", pt="..."),
+            ctx.text(en="Chained, {y1} and {y2} take {loss} off GDP...", pt="..."))],
+    facts={"back": ..., "loss": ...})}
+```
+
+- 3 to 4 insights per panel, each a head of at most 7 words and one or two
+  sentences of at most 32. An insight says what the chart shows but does not
+  say (a ratio, an accumulation, who overtook whom, what a highlight implies,
+  what the picture leaves out); it never recaps the chart or explains how to
+  read it. The title is the one sentence a reader keeps, so it must be true on
+  its own.
+- Every number and year is a `{placeholder}` filled from the country's CSVs
+  (`ctx.fact`), in each locale's number style. A claim that is only true while
+  the data keep a certain shape is guarded with a `need(...)` that raises, so a
+  refetch that falsifies a sentence breaks the build instead of publishing it.
+- No cause that is not in the data, no judgement of governments or people, no
+  hypothetical.
+- Every locale the country publishes is written (`tests/test_stories.py` fails
+  on a gap).
 
 ### 5. `i18n.json` and `ui.json`
 

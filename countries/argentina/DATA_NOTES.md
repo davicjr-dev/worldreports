@@ -489,8 +489,10 @@ the two do not measure alike rather than choosing one.
   and is staged (`parallel_fx.csv : ccl`, from 2013 only).
 - **Interest paid** is the IMF's primary balance minus its overall balance:
   net interest. The overall balance is published to one decimal, so the
-  difference carries ±0.05 points of rounding. The national budget's debt
-  service (`spending_by_function.csv : deuda`, ends 2023) is drawn beside it.
+  difference carries ±0.05 points of rounding. The national budget's broader
+  debt-service function (`spending_by_function.csv : deuda`) is not drawn in
+  the canonical interest slot because it is not a comparable interest-only
+  series.
 - **Spending by function** maps the thirteen national functions onto the
   spine's seven groups: social protection = previsión + asistencia +
   asignaciones; health = the three salud lines; education = básica +
@@ -504,9 +506,9 @@ the two do not measure alike rather than choosing one.
   directa" (Esquema AIF) over nominal GDP, in its three methodologies,
   never joined. No harmonised government-GFCF series exists for Argentina.
 - **The trade balance** in slot 2 is World Bank exports minus imports of
-  goods and services. INDEC's goods balance in dollars is drawn beside it
-  as % of INDEC's dollar GDP; 2026's year-to-date goods surplus has no GDP
-  to divide by and is stated in a note instead.
+  goods and services, the same definition as slot 1. INDEC's customs-goods
+  balance is kept as a dollar annotation; 2026's year-to-date surplus has no
+  annual GDP denominator and is stated in a note rather than overlaid.
 - **Government bond yield.** Argentina has no peso 10-year benchmark. The
   sovereign's long debt is in dollars, so slot 2 draws the US 10-year
   Treasury (annual average of the Treasury's daily par yield) plus the
@@ -567,3 +569,12 @@ margins over it), and it tracks the policy rate closely where both exist
 - Influenza deaths are drawn, per 100,000, beside pneumonia in the
   mortality lens, so the reader sees how little the code is used rather
   than being told.
+# Migration
+
+The gross-flow slot is deliberately pending. DNM entry and exit totals count
+border movements (trips), while residence grants count administrative
+decisions; neither is a resident immigration/emigration pair. Net migration is
+the existing UN WPP modelled count divided by the same WDI population. Stock
+uses INDEC's published census share of private-dwelling residents born abroad,
+and the lens uses 2022 census countries of birth. Birthplace is never relabelled
+as citizenship.
